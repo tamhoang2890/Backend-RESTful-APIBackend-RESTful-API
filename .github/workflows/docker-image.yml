@@ -1,0 +1,88 @@
+name: Deploy Sparklucky Dev
+
+on:
+  push:
+    branches:
+      - dev
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: '${{ github.repository }}'
+
+jobs:
+  build:
+    name: BUILD
+    runs-on: ubuntu-latest
+    environment: DEV
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: '${{ env.REGISTRY }}'
+          username: tamhoang2890
+          password: '${{ secrets.GITHUB_TOKEN }}'
+
+      - name: 'Extract metadata (tags, labels) for Docker'
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}'
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          push: true
+          tags: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
+          labels: '${{ steps.meta.outputs.labels }}'
+          
+      - name: Sync docker-compose to Server
+        uses: easingthemes/ssh-deploy@main
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_KEY }}
+          ARGS: "-rlgoDzvc -i --delete"
+          SOURCE: "./docker-compose.yml"
+          REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+          REMOTE_USER: ${{ vars.REMOTE_USER }}
+          TARGET: ${{ vars.REMOTE_DIR }}/
+
+  
+  deploy:
+    name: DEPLOY
+    needs: build
+    runs-on: ubuntu-latest
+    environment: DEV
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Deploy to Server
+        uses: easingthemes/ssh-deploy@main
+        env:
+            SSH_PRIVATE_KEY: ${{ secrets.SSH_KEY }}
+            ARGS: "-rlgoDzvc -i --delete"
+            SOURCE: "./docker-compose.yml"
+            REMOTE_HOST: ${{ vars.REMOTE_HOST }}
+            REMOTE_USER: ${{ vars.REMOTE_USER }}
+            TARGET: ${{ vars.REMOTE_DIR }}/
+
+      - name: Executing remote ssh commands using password
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: '${{ vars.REMOTE_HOST }}'
+          username: '${{ vars.REMOTE_USER }}'
+          key:  '${{secrets.SSH_KEY}}'
+          script: |
+            docker system prune -f
+            docker image prune -f -a
+            sed -i -e "s/tagVersion/${{ github.sha }}/g" ${{ secrets.REMOTE_DIR }}/docker-compose.yml
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://${{ env.REGISTRY }} -u publisher --password-stdin
+            docker-compose -f ${{ secrets.REMOTE_DIR }}/docker-compose.yml pull
+            docker-compose -f ${{ secrets.REMOTE_DIR }}/docker-compose.yml up -d --remove-orphans
