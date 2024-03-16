@@ -1,0 +1,7 @@
+version: '3'
+services:
+  dragonball888-admin:
+    image: ghcr.io/tamhoang2890/Backend-RESTful-APIBackend-RESTful-API:tagVersion
+    ports:
+      - '8081:8081'
+    restart: unless-stopped
