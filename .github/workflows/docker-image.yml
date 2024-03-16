@@ -1,9 +1,4 @@
-name: Deploy Sparklucky Dev
-
-on:
-  push:
-    branches:
-      - dev
+name: Deploy Dev demo
 
 env:
   REGISTRY: ghcr.io
